@@ -49,8 +49,8 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
     static BOOL available_set = NO;
 
     if ( available_set ) return available;
-    
-    // get an array of AudioClassDescriptions for all installed encoders for the given format 
+
+    // get an array of AudioClassDescriptions for all installed encoders for the given format
     // the specifier is the format that we are interested in - this is 'aac ' in our case
     UInt32 encoderSpecifier = kAudioFormatMPEG4AAC;
     UInt32 size;
@@ -69,7 +69,8 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
     }
     
     for (UInt32 i=0; i < numEncoders; ++i) {
-        if ( encoderDescriptions[i].mSubType == kAudioFormatMPEG4AAC && encoderDescriptions[i].mManufacturer == kAppleHardwareAudioCodecManufacturer ) {
+		//5S doesn't have hardware codec??!
+        if ( encoderDescriptions[i].mSubType == kAudioFormatMPEG4AAC )  {// && encoderDescriptions[i].mManufacturer == kAppleHardwareAudioCodecManufacturer ) {
             available_set = YES;
             available = YES;
             return YES;
@@ -79,6 +80,56 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
     available_set = YES;
     available = NO;
     return NO;
+
+	
+	//from APPLE!  https://developer.apple.com/library/ios/documentation/AudioToolbox/Reference/AudioFormatServicesReference/Reference/reference.html
+//	AudioClassDescription requestedCodecs[1] = {
+//		{
+//			kAudioEncoderComponentType,
+//			kAudioFormatMPEG4AAC,
+//			kAppleHardwareAudioCodecManufacturer
+//		}
+////		{
+////			kAudioDecoderComponentType,
+////			kAudioFormatMPEG4AAC,
+////			kAppleHardwareAudioCodecManufacturer
+////		}
+//	};
+//	
+//	UInt32 successfulCodecs = 0;
+//	UInt32 size = sizeof (successfulCodecs);
+//	OSStatus result =   AudioFormatGetProperty (
+//												kAudioFormatProperty_HardwareCodecCapabilities,
+//												requestedCodecs,
+//												sizeof (requestedCodecs),
+//												&size,
+//												&successfulCodecs
+//												);
+//	
+//    if ( !checkResult(result, "AudioSessionGetProperty(kAudioFormatProperty_HardwareCodecCapabilities)") )
+//		return NO;
+//
+//	switch (successfulCodecs) {
+//		case 0:
+//			// aac hardware encoder is unavailable. aac hardware decoder availability
+//			// is unknown; could ask again for only aac hardware decoding
+//			available_set = YES;
+//			available = NO;
+//			return NO;
+//		case 1:
+//			// aac hardware encoder is available but, while using it, no hardware
+//			// decoder is available.
+//			available_set = YES;
+//			available = YES;
+//		case 2:
+//			// hardware encoder and decoder are available simultaneously
+//			available_set = YES;
+//			available = YES;
+//		default:
+//			available_set = YES;
+//			available = NO;
+//			return NO;
+//	}
 #endif
 }
 
