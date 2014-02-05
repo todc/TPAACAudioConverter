@@ -49,8 +49,8 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
     static BOOL available_set = NO;
 
     if ( available_set ) return available;
-
-    // get an array of AudioClassDescriptions for all installed encoders for the given format
+    
+    // get an array of AudioClassDescriptions for all installed encoders for the given format 
     // the specifier is the format that we are interested in - this is 'aac ' in our case
     UInt32 encoderSpecifier = kAudioFormatMPEG4AAC;
     UInt32 size;
@@ -69,8 +69,7 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
     }
     
     for (UInt32 i=0; i < numEncoders; ++i) {
-		//5S doesn't have hardware codec??!
-        if ( encoderDescriptions[i].mSubType == kAudioFormatMPEG4AAC )  {// && encoderDescriptions[i].mManufacturer == kAppleHardwareAudioCodecManufacturer ) {
+        if ( encoderDescriptions[i].mSubType == kAudioFormatMPEG4AAC  ) {
             available_set = YES;
             available = YES;
             return YES;
@@ -80,56 +79,6 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
     available_set = YES;
     available = NO;
     return NO;
-
-	
-	//from APPLE!  https://developer.apple.com/library/ios/documentation/AudioToolbox/Reference/AudioFormatServicesReference/Reference/reference.html
-//	AudioClassDescription requestedCodecs[1] = {
-//		{
-//			kAudioEncoderComponentType,
-//			kAudioFormatMPEG4AAC,
-//			kAppleHardwareAudioCodecManufacturer
-//		}
-////		{
-////			kAudioDecoderComponentType,
-////			kAudioFormatMPEG4AAC,
-////			kAppleHardwareAudioCodecManufacturer
-////		}
-//	};
-//	
-//	UInt32 successfulCodecs = 0;
-//	UInt32 size = sizeof (successfulCodecs);
-//	OSStatus result =   AudioFormatGetProperty (
-//												kAudioFormatProperty_HardwareCodecCapabilities,
-//												requestedCodecs,
-//												sizeof (requestedCodecs),
-//												&size,
-//												&successfulCodecs
-//												);
-//	
-//    if ( !checkResult(result, "AudioSessionGetProperty(kAudioFormatProperty_HardwareCodecCapabilities)") )
-//		return NO;
-//
-//	switch (successfulCodecs) {
-//		case 0:
-//			// aac hardware encoder is unavailable. aac hardware decoder availability
-//			// is unknown; could ask again for only aac hardware decoding
-//			available_set = YES;
-//			available = NO;
-//			return NO;
-//		case 1:
-//			// aac hardware encoder is available but, while using it, no hardware
-//			// decoder is available.
-//			available_set = YES;
-//			available = YES;
-//		case 2:
-//			// hardware encoder and decoder are available simultaneously
-//			available_set = YES;
-//			available = YES;
-//		default:
-//			available_set = YES;
-//			available = NO;
-//			return NO;
-//	}
 #endif
 }
 
@@ -158,12 +107,10 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
 }
 
 - (void)dealloc {
-    [_condition release];
     self.source = nil;
     self.destination = nil;
     self.delegate = nil;
     self.dataSource = nil;
-    [super dealloc];
 }
 
 -(void)start {
@@ -179,7 +126,6 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
     
     _cancelled = NO;
     _processing = YES;
-    [self retain];
     [self performSelectorInBackground:@selector(processingThread) withObject:nil];
 }
 
@@ -193,7 +139,6 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
         checkResult(AudioSessionSetProperty(kAudioSessionProperty_OverrideCategoryMixWithOthers, sizeof (allowMixing), &allowMixing),
                     "AudioSessionSetProperty(kAudioSessionProperty_OverrideCategoryMixWithOthers)");
     }
-    [self autorelease];
 }
 
 - (void)interrupt {
@@ -222,7 +167,6 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
         checkResult(AudioSessionSetProperty(kAudioSessionProperty_OverrideCategoryMixWithOthers, sizeof (allowMixing), &allowMixing),
                     "AudioSessionSetProperty(kAudioSessionProperty_OverrideCategoryMixWithOthers)");
     }
-    [self autorelease];
 }
 
 - (void)reportErrorAndCleanup:(NSError*)error {
@@ -233,246 +177,235 @@ static inline BOOL _checkResultLite(OSStatus result, const char *operation, cons
         checkResult(AudioSessionSetProperty(kAudioSessionProperty_OverrideCategoryMixWithOthers, sizeof (allowMixing), &allowMixing),
                     "AudioSessionSetProperty(kAudioSessionProperty_OverrideCategoryMixWithOthers)");
     }
-    [self autorelease];
     [_delegate AACAudioConverter:self didFailWithError:error];
 }
 
 - (void)processingThread {
-    NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
-    
-    [[NSThread currentThread] setThreadPriority:0.9];
-    
-    ExtAudioFileRef sourceFile = NULL;
-    AudioStreamBasicDescription sourceFormat;
-    if ( _source ) {
-        if ( !checkResult(ExtAudioFileOpenURL((CFURLRef)[NSURL fileURLWithPath:_source], &sourceFile), "ExtAudioFileOpenURL") ) {
+    @autoreleasepool {
+        [[NSThread currentThread] setThreadPriority:0.9];
+        
+        ExtAudioFileRef sourceFile = NULL;
+        AudioStreamBasicDescription sourceFormat;
+        if ( _source ) {
+            if ( !checkResult(ExtAudioFileOpenURL((__bridge CFURLRef)[NSURL fileURLWithPath:_source], &sourceFile), "ExtAudioFileOpenURL") ) {
+                [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
+                                       withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
+                                                                      code:TPAACAudioConverterFileError
+                                                                  userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't open the source file", @"Error message") forKey:NSLocalizedDescriptionKey]]
+                                    waitUntilDone:NO];
+                _processing = NO;
+                return;
+            }
+            
+            
+            UInt32 size = sizeof(sourceFormat);
+            if ( !checkResult(ExtAudioFileGetProperty(sourceFile, kExtAudioFileProperty_FileDataFormat, &size, &sourceFormat), 
+                              "ExtAudioFileGetProperty(kExtAudioFileProperty_FileDataFormat)") ) {
+                [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
+                                       withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
+                                                                      code:TPAACAudioConverterFormatError
+                                                                  userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't read the source file", @"Error message") forKey:NSLocalizedDescriptionKey]]
+                                    waitUntilDone:NO];
+                _processing = NO;
+                return;
+            }
+        } else {
+            sourceFormat = _audioFormat;
+        }
+        
+        AudioStreamBasicDescription destinationFormat;
+        memset(&destinationFormat, 0, sizeof(destinationFormat));
+        destinationFormat.mChannelsPerFrame = sourceFormat.mChannelsPerFrame;
+        destinationFormat.mFormatID = kAudioFormatMPEG4AAC;
+        UInt32 size = sizeof(destinationFormat);
+        if ( !checkResult(AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &destinationFormat), 
+                          "AudioFormatGetProperty(kAudioFormatProperty_FormatInfo)") ) {
+            [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
+                                   withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
+                                                                  code:TPAACAudioConverterFormatError
+                                                              userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't setup destination format", @"Error message") forKey:NSLocalizedDescriptionKey]]
+                                waitUntilDone:NO];
+            _processing = NO;
+            return;
+        }
+        
+        ExtAudioFileRef destinationFile;
+        if ( !checkResult(ExtAudioFileCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:_destination], kAudioFileM4AType, &destinationFormat, NULL, kAudioFileFlags_EraseFile, &destinationFile), "ExtAudioFileCreateWithURL") ) {
             [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
                                    withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
                                                                   code:TPAACAudioConverterFileError
                                                               userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't open the source file", @"Error message") forKey:NSLocalizedDescriptionKey]]
                                 waitUntilDone:NO];
-            [pool release];
             _processing = NO;
             return;
         }
         
+        AudioStreamBasicDescription clientFormat;
+        if ( sourceFormat.mFormatID == kAudioFormatLinearPCM ) {
+            clientFormat = sourceFormat;
+        } else {
+            memset(&clientFormat, 0, sizeof(clientFormat));
+            int sampleSize = sizeof(AudioSampleType);
+            clientFormat.mFormatID = kAudioFormatLinearPCM;
+            clientFormat.mFormatFlags = kAudioFormatFlagsCanonical;
+            clientFormat.mBitsPerChannel = 8 * sampleSize;
+            clientFormat.mChannelsPerFrame = sourceFormat.mChannelsPerFrame;
+            clientFormat.mFramesPerPacket = 1;
+            clientFormat.mBytesPerPacket = clientFormat.mBytesPerFrame = sourceFormat.mChannelsPerFrame * sampleSize;
+            clientFormat.mSampleRate = sourceFormat.mSampleRate;
+        }
         
-        UInt32 size = sizeof(sourceFormat);
-        if ( !checkResult(ExtAudioFileGetProperty(sourceFile, kExtAudioFileProperty_FileDataFormat, &size, &sourceFormat), 
-                          "ExtAudioFileGetProperty(kExtAudioFileProperty_FileDataFormat)") ) {
+        size = sizeof(clientFormat);
+        if ( (sourceFile && !checkResult(ExtAudioFileSetProperty(sourceFile, kExtAudioFileProperty_ClientDataFormat, size, &clientFormat), 
+                          "ExtAudioFileSetProperty(sourceFile, kExtAudioFileProperty_ClientDataFormat")) ||
+             !checkResult(ExtAudioFileSetProperty(destinationFile, kExtAudioFileProperty_ClientDataFormat, size, &clientFormat), 
+                          "ExtAudioFileSetProperty(destinationFile, kExtAudioFileProperty_ClientDataFormat")) {
+            if ( sourceFile ) ExtAudioFileDispose(sourceFile);
+            ExtAudioFileDispose(destinationFile);
             [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
                                    withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
                                                                   code:TPAACAudioConverterFormatError
-                                                              userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't read the source file", @"Error message") forKey:NSLocalizedDescriptionKey]]
+                                                              userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't setup intermediate conversion format", @"Error message") forKey:NSLocalizedDescriptionKey]]
                                 waitUntilDone:NO];
-            [pool release];
             _processing = NO;
             return;
         }
-    } else {
-        sourceFormat = _audioFormat;
-    }
-    
-    AudioStreamBasicDescription destinationFormat;
-    memset(&destinationFormat, 0, sizeof(destinationFormat));
-    destinationFormat.mChannelsPerFrame = sourceFormat.mChannelsPerFrame;
-    destinationFormat.mFormatID = kAudioFormatMPEG4AAC;
-    UInt32 size = sizeof(destinationFormat);
-    if ( !checkResult(AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &destinationFormat), 
-                      "AudioFormatGetProperty(kAudioFormatProperty_FormatInfo)") ) {
-        [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
-                               withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
-                                                              code:TPAACAudioConverterFormatError
-                                                          userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't setup destination format", @"Error message") forKey:NSLocalizedDescriptionKey]]
-                            waitUntilDone:NO];
-        [pool release];
-        _processing = NO;
-        return;
-    }
-    
-    ExtAudioFileRef destinationFile;
-    if ( !checkResult(ExtAudioFileCreateWithURL((CFURLRef)[NSURL fileURLWithPath:_destination], kAudioFileM4AType, &destinationFormat, NULL, kAudioFileFlags_EraseFile, &destinationFile), "ExtAudioFileCreateWithURL") ) {
-        [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
-                               withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
-                                                              code:TPAACAudioConverterFileError
-                                                          userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't open the source file", @"Error message") forKey:NSLocalizedDescriptionKey]]
-                            waitUntilDone:NO];
-        [pool release];
-        _processing = NO;
-        return;
-    }
-    
-    AudioStreamBasicDescription clientFormat;
-    if ( sourceFormat.mFormatID == kAudioFormatLinearPCM ) {
-        clientFormat = sourceFormat;
-    } else {
-        memset(&clientFormat, 0, sizeof(clientFormat));
-        int sampleSize = sizeof(AudioSampleType);
-        clientFormat.mFormatID = kAudioFormatLinearPCM;
-        clientFormat.mFormatFlags = kAudioFormatFlagsCanonical;
-        clientFormat.mBitsPerChannel = 8 * sampleSize;
-        clientFormat.mChannelsPerFrame = sourceFormat.mChannelsPerFrame;
-        clientFormat.mFramesPerPacket = 1;
-        clientFormat.mBytesPerPacket = clientFormat.mBytesPerFrame = sourceFormat.mChannelsPerFrame * sampleSize;
-        clientFormat.mSampleRate = sourceFormat.mSampleRate;
-    }
-    
-    size = sizeof(clientFormat);
-    if ( (sourceFile && !checkResult(ExtAudioFileSetProperty(sourceFile, kExtAudioFileProperty_ClientDataFormat, size, &clientFormat), 
-                      "ExtAudioFileSetProperty(sourceFile, kExtAudioFileProperty_ClientDataFormat")) ||
-         !checkResult(ExtAudioFileSetProperty(destinationFile, kExtAudioFileProperty_ClientDataFormat, size, &clientFormat), 
-                      "ExtAudioFileSetProperty(destinationFile, kExtAudioFileProperty_ClientDataFormat")) {
-        if ( sourceFile ) ExtAudioFileDispose(sourceFile);
-        ExtAudioFileDispose(destinationFile);
-        [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
-                               withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
-                                                              code:TPAACAudioConverterFormatError
-                                                          userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Couldn't setup intermediate conversion format", @"Error message") forKey:NSLocalizedDescriptionKey]]
-                            waitUntilDone:NO];
-        [pool release];
-        _processing = NO;
-        return;
-    }
-    
-    BOOL canResumeFromInterruption = YES;
-    AudioConverterRef converter;
-    size = sizeof(converter);
-    if ( checkResult(ExtAudioFileGetProperty(destinationFile, kExtAudioFileProperty_AudioConverter, &size, &converter), 
-                      "ExtAudioFileGetProperty(kExtAudioFileProperty_AudioConverter;)") ) {
-        UInt32 canResume = 0;
-        size = sizeof(canResume);
-        if ( checkResult(AudioConverterGetProperty(converter, kAudioConverterPropertyCanResumeFromInterruption, &size, &canResume), 
-                         "AudioConverterGetProperty(kAudioConverterPropertyCanResumeFromInterruption") ) {
-            canResumeFromInterruption = (BOOL)canResume;
+        
+        BOOL canResumeFromInterruption = YES;
+        AudioConverterRef converter;
+        size = sizeof(converter);
+        if ( checkResult(ExtAudioFileGetProperty(destinationFile, kExtAudioFileProperty_AudioConverter, &size, &converter), 
+                          "ExtAudioFileGetProperty(kExtAudioFileProperty_AudioConverter;)") ) {
+            UInt32 canResume = 0;
+            size = sizeof(canResume);
+            if ( checkResult(AudioConverterGetProperty(converter, kAudioConverterPropertyCanResumeFromInterruption, &size, &canResume), 
+                             "AudioConverterGetProperty(kAudioConverterPropertyCanResumeFromInterruption") ) {
+                canResumeFromInterruption = (BOOL)canResume;
+            }
         }
-    }
-    
-    SInt64 lengthInFrames = 0;
-    if ( sourceFile ) {
-        size = sizeof(lengthInFrames);
-        ExtAudioFileGetProperty(sourceFile, kExtAudioFileProperty_FileLengthFrames, &size, &lengthInFrames);
-    }
-    
-    UInt32 bufferByteSize = 32768;
-    char srcBuffer[bufferByteSize];
-    SInt64 sourceFrameOffset = 0;
-    BOOL reportProgress = lengthInFrames > 0 && [_delegate respondsToSelector:@selector(AACAudioConverter:didMakeProgress:)];
-    NSTimeInterval lastProgressReport = [NSDate timeIntervalSinceReferenceDate];
-    
-    while ( !_cancelled ) {
-        AudioBufferList fillBufList;
-        fillBufList.mNumberBuffers = 1;
-        fillBufList.mBuffers[0].mNumberChannels = clientFormat.mChannelsPerFrame;
-        fillBufList.mBuffers[0].mDataByteSize = bufferByteSize;
-        fillBufList.mBuffers[0].mData = srcBuffer;
         
-        UInt32 numFrames = bufferByteSize / clientFormat.mBytesPerFrame;
-        
+        SInt64 lengthInFrames = 0;
         if ( sourceFile ) {
-            if ( !checkResult(ExtAudioFileRead(sourceFile, &numFrames, &fillBufList), "ExtAudioFileRead") ) {
-                ExtAudioFileDispose(sourceFile);
+            size = sizeof(lengthInFrames);
+            ExtAudioFileGetProperty(sourceFile, kExtAudioFileProperty_FileLengthFrames, &size, &lengthInFrames);
+        }
+        
+        UInt32 bufferByteSize = 32768;
+        char srcBuffer[bufferByteSize];
+        SInt64 sourceFrameOffset = 0;
+        BOOL reportProgress = lengthInFrames > 0 && [_delegate respondsToSelector:@selector(AACAudioConverter:didMakeProgress:)];
+        NSTimeInterval lastProgressReport = [NSDate timeIntervalSinceReferenceDate];
+        
+        while ( !_cancelled ) {
+            AudioBufferList fillBufList;
+            fillBufList.mNumberBuffers = 1;
+            fillBufList.mBuffers[0].mNumberChannels = clientFormat.mChannelsPerFrame;
+            fillBufList.mBuffers[0].mDataByteSize = bufferByteSize;
+            fillBufList.mBuffers[0].mData = srcBuffer;
+            
+            UInt32 numFrames = bufferByteSize / clientFormat.mBytesPerFrame;
+            
+            if ( sourceFile ) {
+                if ( !checkResult(ExtAudioFileRead(sourceFile, &numFrames, &fillBufList), "ExtAudioFileRead") ) {
+                    ExtAudioFileDispose(sourceFile);
+                    ExtAudioFileDispose(destinationFile);
+                    [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
+                                           withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
+                                                                          code:TPAACAudioConverterFormatError
+                                                                      userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Error reading the source file", @"Error message") forKey:NSLocalizedDescriptionKey]]
+                                        waitUntilDone:NO];
+                    _processing = NO;
+                    return;
+                }
+            } else {
+                NSUInteger length = bufferByteSize;
+                [_dataSource AACAudioConverter:self nextBytes:srcBuffer length:&length];
+                numFrames = length / clientFormat.mBytesPerFrame;
+                fillBufList.mBuffers[0].mDataByteSize = length;
+            }
+            
+            if ( !numFrames ) {
+                break;
+            }
+            
+            sourceFrameOffset += numFrames;
+            
+            [_condition lock];
+            BOOL wasInterrupted = _interrupted;
+            while ( _interrupted ) {
+                [_condition wait];
+            }
+            [_condition unlock];
+            
+            if ( wasInterrupted && !canResumeFromInterruption ) {
+                if ( sourceFile ) ExtAudioFileDispose(sourceFile);
+                ExtAudioFileDispose(destinationFile);
+                [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
+                                       withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
+                                                                      code:TPAACAudioConverterUnrecoverableInterruptionError
+                                                                  userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Interrupted", @"Error message") forKey:NSLocalizedDescriptionKey]]
+                                    waitUntilDone:NO];
+                _processing = NO;
+                return;
+            }
+            
+            OSStatus status = ExtAudioFileWrite(destinationFile, numFrames, &fillBufList);
+            
+            if ( status == kExtAudioFileError_CodecUnavailableInputConsumed) {
+                /*
+                 Returned when ExtAudioFileWrite was interrupted. You must stop calling
+                 ExtAudioFileWrite. If the underlying audio converter can resume after an
+                 interruption (see kAudioConverterPropertyCanResumeFromInterruption), you must
+                 wait for an EndInterruption notification from AudioSession, and call AudioSessionSetActive(true)
+                 before resuming. In this situation, the buffer you provided to ExtAudioFileWrite was successfully
+                 consumed and you may proceed to the next buffer
+                 */
+            } else if ( status == kExtAudioFileError_CodecUnavailableInputNotConsumed ) {
+                /*
+                 Returned when ExtAudioFileWrite was interrupted. You must stop calling
+                 ExtAudioFileWrite. If the underlying audio converter can resume after an
+                 interruption (see kAudioConverterPropertyCanResumeFromInterruption), you must
+                 wait for an EndInterruption notification from AudioSession, and call AudioSessionSetActive(true)
+                 before resuming. In this situation, the buffer you provided to ExtAudioFileWrite was not
+                 successfully consumed and you must try to write it again
+                 */
+                    
+                // seek back to last offset before last read so we can try again after the interruption
+                sourceFrameOffset -= numFrames;
+                if ( sourceFile ) {
+                    checkResult(ExtAudioFileSeek(sourceFile, sourceFrameOffset), "ExtAudioFileSeek");
+                } else if ( [_dataSource respondsToSelector:@selector(AACAudioConverter:seekToPosition:)] ) {
+                    [_dataSource AACAudioConverter:self seekToPosition:sourceFrameOffset * clientFormat.mBytesPerFrame];
+                }
+            } else if ( !checkResult(status, "ExtAudioFileWrite") ) {
+                if ( sourceFile ) ExtAudioFileDispose(sourceFile);
                 ExtAudioFileDispose(destinationFile);
                 [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
                                        withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
                                                                       code:TPAACAudioConverterFormatError
-                                                                  userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Error reading the source file", @"Error message") forKey:NSLocalizedDescriptionKey]]
+                                                                  userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Error writing the destination file", @"Error message") forKey:NSLocalizedDescriptionKey]]
                                     waitUntilDone:NO];
-                [pool release];
                 _processing = NO;
                 return;
             }
-        } else {
-            NSUInteger length = bufferByteSize;
-            [_dataSource AACAudioConverter:self nextBytes:srcBuffer length:&length];
-            numFrames = length / clientFormat.mBytesPerFrame;
-            fillBufList.mBuffers[0].mDataByteSize = length;
-        }
-        
-        if ( !numFrames ) {
-            break;
-        }
-        
-        sourceFrameOffset += numFrames;
-        
-        [_condition lock];
-        BOOL wasInterrupted = _interrupted;
-        while ( _interrupted ) {
-            [_condition wait];
-        }
-        [_condition unlock];
-        
-        if ( wasInterrupted && !canResumeFromInterruption ) {
-            if ( sourceFile ) ExtAudioFileDispose(sourceFile);
-            ExtAudioFileDispose(destinationFile);
-            [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
-                                   withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
-                                                                  code:TPAACAudioConverterUnrecoverableInterruptionError
-                                                              userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Interrupted", @"Error message") forKey:NSLocalizedDescriptionKey]]
-                                waitUntilDone:NO];
-            [pool release];
-            _processing = NO;
-            return;
-        }
-        
-        OSStatus status = ExtAudioFileWrite(destinationFile, numFrames, &fillBufList);
-        
-        if ( status == kExtAudioFileError_CodecUnavailableInputConsumed) {
-            /*
-             Returned when ExtAudioFileWrite was interrupted. You must stop calling
-             ExtAudioFileWrite. If the underlying audio converter can resume after an
-             interruption (see kAudioConverterPropertyCanResumeFromInterruption), you must
-             wait for an EndInterruption notification from AudioSession, and call AudioSessionSetActive(true)
-             before resuming. In this situation, the buffer you provided to ExtAudioFileWrite was successfully
-             consumed and you may proceed to the next buffer
-             */
-        } else if ( status == kExtAudioFileError_CodecUnavailableInputNotConsumed ) {
-            /*
-             Returned when ExtAudioFileWrite was interrupted. You must stop calling
-             ExtAudioFileWrite. If the underlying audio converter can resume after an
-             interruption (see kAudioConverterPropertyCanResumeFromInterruption), you must
-             wait for an EndInterruption notification from AudioSession, and call AudioSessionSetActive(true)
-             before resuming. In this situation, the buffer you provided to ExtAudioFileWrite was not
-             successfully consumed and you must try to write it again
-             */
-                
-            // seek back to last offset before last read so we can try again after the interruption
-            sourceFrameOffset -= numFrames;
-            if ( sourceFile ) {
-                checkResult(ExtAudioFileSeek(sourceFile, sourceFrameOffset), "ExtAudioFileSeek");
-            } else if ( [_dataSource respondsToSelector:@selector(AACAudioConverter:seekToPosition:)] ) {
-                [_dataSource AACAudioConverter:self seekToPosition:sourceFrameOffset * clientFormat.mBytesPerFrame];
+            
+            if ( reportProgress && [NSDate timeIntervalSinceReferenceDate]-lastProgressReport > 0.1 ) {
+                lastProgressReport = [NSDate timeIntervalSinceReferenceDate];
+                [self performSelectorOnMainThread:@selector(reportProgress:) withObject:[NSNumber numberWithFloat:(double)sourceFrameOffset/lengthInFrames] waitUntilDone:NO];
             }
-        } else if ( !checkResult(status, "ExtAudioFileWrite") ) {
-            if ( sourceFile ) ExtAudioFileDispose(sourceFile);
-            ExtAudioFileDispose(destinationFile);
-            [self performSelectorOnMainThread:@selector(reportErrorAndCleanup:)
-                                   withObject:[NSError errorWithDomain:TPAACAudioConverterErrorDomain
-                                                                  code:TPAACAudioConverterFormatError
-                                                              userInfo:[NSDictionary dictionaryWithObject:NSLocalizedString(@"Error writing the destination file", @"Error message") forKey:NSLocalizedDescriptionKey]]
-                                waitUntilDone:NO];
-            [pool release];
-            _processing = NO;
-            return;
+        }
+
+        if ( sourceFile ) ExtAudioFileDispose(sourceFile);
+        ExtAudioFileDispose(destinationFile);
+        
+        if ( _cancelled ) {
+            [[NSFileManager defaultManager] removeItemAtPath:_destination error:NULL];
+        } else {
+            [self performSelectorOnMainThread:@selector(reportCompletion) withObject:nil waitUntilDone:NO];
         }
         
-        if ( reportProgress && [NSDate timeIntervalSinceReferenceDate]-lastProgressReport > 0.1 ) {
-            lastProgressReport = [NSDate timeIntervalSinceReferenceDate];
-            [self performSelectorOnMainThread:@selector(reportProgress:) withObject:[NSNumber numberWithFloat:(double)sourceFrameOffset/lengthInFrames] waitUntilDone:NO];
-        }
+        _processing = NO;
     }
-
-    if ( sourceFile ) ExtAudioFileDispose(sourceFile);
-    ExtAudioFileDispose(destinationFile);
-    
-    if ( _cancelled ) {
-        [[NSFileManager defaultManager] removeItemAtPath:_destination error:NULL];
-    } else {
-        [self performSelectorOnMainThread:@selector(reportCompletion) withObject:nil waitUntilDone:NO];
-    }
-    
-    _processing = NO;
-    
-    [pool release];
 }
 
 @end
