@@ -146,6 +146,8 @@
 /* Begin PBXProject section */
 		278EC9131347D0E600E4253C /* Project object */ = {
 			isa = PBXProject;
+			attributes = {
+			};
 			buildConfigurationList = 278EC9161347D0E600E4253C /* Build configuration list for PBXProject "AACConverter" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = English;
@@ -255,10 +257,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_OBJC_ARC = YES;
 				COPY_PHASE_STRIP = NO;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "AACConverter/AACConverter-Prefix.pch";
+				GCC_VERSION = "";
 				INFOPLIST_FILE = "AACConverter/AACConverter-Info.plist";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				WRAPPER_EXTENSION = app;
@@ -269,9 +273,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_OBJC_ARC = YES;
 				COPY_PHASE_STRIP = YES;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "AACConverter/AACConverter-Prefix.pch";
+				GCC_VERSION = "";
 				INFOPLIST_FILE = "AACConverter/AACConverter-Info.plist";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				VALIDATE_PRODUCT = YES;
